@@ -20,7 +20,8 @@ Expand-Archive -Force 'source.zip' 'src'
 
 # Foloseste Python x64 cu Tkinter, daca exista deja.
 $python = $null
-if (Get-Command py -ErrorAction SilentlyContinue) {
+if ($env:pythonLocation) { $python = Join-Path $env:pythonLocation 'python.exe' }
+if (-not $python -and (Get-Command py -ErrorAction SilentlyContinue)) {
     $candidate = & py -3 -c 'import tkinter,struct,sys; assert struct.calcsize(chr(80))==8; print(sys.executable)' 2>$null
     if ($LASTEXITCODE -eq 0) { $python = ($candidate | Select-Object -Last 1) }
 }
@@ -64,10 +65,14 @@ Move-Item $javaFolder.FullName $javaTarget
 & $buildPython -m PyInstaller --noconfirm --clean --onedir --windowed --name APK-Lens --add-data "$tools;tools" 'src\launch.pyw'
 Check 'Construirea APK-Lens.exe'
 
-Download 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.11/nsis-3.11.zip' 'nsis.zip'
-Expand-Archive -Force 'nsis.zip' 'nsis'
-$compiler = Get-ChildItem 'nsis' -Filter makensis.exe -Recurse | Select-Object -First 1
-if (-not $compiler) { throw 'Compilatorul NSIS nu a fost gasit.' }
+$compilerPath = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
+if (-not (Test-Path $compilerPath)) {
+    Download 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.11/nsis-3.11.zip' 'nsis.zip'
+    Expand-Archive -Force 'nsis.zip' 'nsis'
+    $compiler = Get-ChildItem 'nsis' -Filter makensis.exe -Recurse | Select-Object -First 1
+    if (-not $compiler) { throw 'Compilatorul NSIS nu a fost gasit.' }
+    $compilerPath = $compiler.FullName
+}
 
 $nsi = @'
 Unicode true
@@ -111,7 +116,7 @@ Section "Uninstall"
 SectionEnd
 '@
 [IO.File]::WriteAllText((Join-Path $root 'setup.nsi'), $nsi, (New-Object Text.UTF8Encoding($true)))
-& $compiler.FullName 'setup.nsi'
+& $compilerPath 'setup.nsi'
 Check 'Construirea installerului'
 $desktop = [Environment]::GetFolderPath('Desktop')
 $result = Join-Path $desktop 'APK-Lens-Setup-x64.exe'

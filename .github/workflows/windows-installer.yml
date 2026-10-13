@@ -21,6 +21,9 @@ jobs:
         shell: pwsh
         working-directory: app
         run: python -m unittest discover -s tests -v
+      - name: Install NSIS compiler
+        shell: pwsh
+        run: choco install nsis --yes --no-progress
       - name: Build bundled installer
         shell: pwsh
         run: ./Build-APK-Lens.ps1
