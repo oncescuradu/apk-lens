@@ -1,0 +1,61 @@
+name: Build Windows installer
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - Build-APK-Lens.ps1
+      - .github/workflows/windows-installer.yml
+permissions:
+  contents: write
+jobs:
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+          architecture: x64
+      - name: Verify comparison logic
+        shell: pwsh
+        working-directory: app
+        run: python -m unittest discover -s tests -v
+      - name: Build bundled installer
+        shell: pwsh
+        run: ./Build-APK-Lens.ps1
+      - name: Verify GUI starts on Windows
+        shell: pwsh
+        run: |
+          $test = @'
+          import sys
+          sys.path.insert(0, 'app')
+          from app import App
+          window = App()
+          window.update()
+          window.destroy()
+          print('Tkinter GUI starts on Windows')
+          '@
+          Set-Content gui-smoke.py $test
+          python gui-smoke.py
+          if ($LASTEXITCODE -ne 0) { throw 'GUI smoke test failed' }
+      - name: Prepare assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+          $installer = Join-Path $env:LOCALAPPDATA 'APK-Lens-Builder\APK-Lens-Setup-x64.exe'
+          Copy-Item $installer release-assets/
+          $hash = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
+          Set-Content release-assets/APK-Lens-Setup-x64.sha256 "$hash  APK-Lens-Setup-x64.exe"
+          Compress-Archive -Path app,Build-APK-Lens.ps1 -DestinationPath release-assets/APK-Lens-v0.1.0-source.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: APK-Lens-Windows-x64
+          path: release-assets/*
+      - name: Upload release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload v0.1.0 release-assets/APK-Lens-Setup-x64.exe release-assets/APK-Lens-Setup-x64.sha256 release-assets/APK-Lens-v0.1.0-source.zip --clobber --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
